@@ -207,6 +207,13 @@
             min-width: 0;
         }
         
+        input[type="color"] {
+            width: 100%;
+            height: 42px;
+            padding: 4px;
+            cursor: pointer;
+        }
+        
         input:focus,
         select:focus {
             outline: 2px solid #7775f566;
@@ -278,7 +285,7 @@
             padding: 9px;
             margin-bottom: 7px;
             border-radius: 7px;
-            border: 1px solid var(--line);
+            border-left: 4px solid var(--shift-color, var(--line));
             background: var(--panel2);
             font-size: 11px;
             overflow-wrap: anywhere;
@@ -598,7 +605,10 @@
         html[data-theme="light"] .shift.ukg,
         html[data-theme="light"] .shift.flex {
             background: #edf1f5;
-            border-color: var(--line);
+            border-top-color: var(--line);
+            border-right-color: var(--line);
+            border-bottom-color: var(--line);
+            border-left-color: var(--shift-color, var(--line));
         }
         
         html[data-theme="light"] .shift.preview {
@@ -721,9 +731,6 @@
         </div>
 
         <div class="legend">
-            <span><i class="swatch" style="background:var(--purple)"></i> UKG Pro · Job 1</span>
-            <span><i class="swatch" style="background:var(--teal)"></i> Shift App · Job 2</span>
-            <span><i class="swatch" style="background:var(--amber)"></i> Open-shift preview</span>
         </div>
         <section class="week" id="calendar" aria-label="Weekly shift calendar"></section>
 
@@ -739,7 +746,7 @@
                 <h3>Pay and schedule settings</h3>
                 <div class="muted">Change these estimates to match your jobs.</div>
                 <div class="settings">
-                    <div class="setting"><label for="ukgRate">UKG Pro hourly rate ($)</label><input id="ukgRate" type="number" min="0" step=".25" value="18"></div>
+                    <div class="setting"><label for="ukgRate">UKG Pro hourly rate ($)</label><input id="ukgRate" type="number" min="0" step=".25" value="19"></div>
                     <div class="setting"><label for="flexRate">Shift App hourly rate ($)</label><input id="flexRate" type="number" min="0" step=".25" value="17"></div>
                     <div class="setting"><label for="commute">Commute allowance</label><select id="commute"><option value="0">0 min</option><option value="15">15 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
                 </div>
@@ -761,6 +768,10 @@
                     <div class="form-row"><label for="start">Start time</label><input id="start" type="time" value="09:00" required></div>
                     <div class="form-row"><label for="end">End time</label><input id="end" type="time" value="17:00" required></div>
                     <div class="form-row"><label for="location">Location (optional)</label><input id="location" maxlength="60" placeholder="e.g. Ventura"></div>
+                    <div class="form-row">
+                        <label for="shiftColor">Shift color</label>
+                        <input id="shiftColor" type="color" value="#6b91c9">
+                    </div>
                 </div>
                 <div class="form-actions">
                     <button class="btn" type="button" data-close>Cancel</button>
@@ -801,7 +812,7 @@
 
             setTheme(newTheme);
         });
-        const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const STORAGE_KEY = "rosterbridge_shifts_v1";
 
         function localISO(date) {
@@ -822,9 +833,16 @@
             return result;
         }
 
-        function mondayOf(date) {
-            const result = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
-            result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
+        function sundayOf(date) {
+            const result = new Date(
+                date.getFullYear(),
+                date.getMonth(),
+                date.getDate(),
+                12
+            );
+
+            result.setDate(result.getDate() - result.getDay());
+
             return result;
         }
 
@@ -878,9 +896,10 @@
         function getTodayISO() {
             return localISO(new Date());
         }
-        let weekStart = mondayOf(today);
+        let weekStart = sundayOf(today);
         let shifts = loadShifts();
         let previews = [];
+        let editingShiftId = null;
 
         function loadShifts() {
             try {
@@ -893,12 +912,12 @@
                 console.warn("Could not read saved shifts:", error);
             }
             // Demo shifts are added only the first time the app is opened.
-            const monday = mondayOf(new Date());
+            const sunday = sundayOf(new Date());
             return [{
                 id: "demo-1",
                 source: "ukg",
                 label: "Day shift",
-                date: localISO(monday),
+                date: localISO(sunday),
                 start: "09:00",
                 end: "17:00",
                 location: "Job 1"
@@ -906,7 +925,7 @@
                 id: "demo-2",
                 source: "flex",
                 label: "Evening shift",
-                date: localISO(addDays(monday, 1)),
+                date: localISO(addDays(sunday, 1)),
                 start: "17:30",
                 end: "21:30",
                 location: "Job 2"
@@ -914,7 +933,7 @@
                 id: "demo-3",
                 source: "ukg",
                 label: "Day shift",
-                date: localISO(addDays(monday, 2)),
+                date: localISO(addDays(sunday, 2)),
                 start: "10:00",
                 end: "18:00",
                 location: "Job 1"
@@ -1049,71 +1068,128 @@
             renderOpenShifts();
         }
 
+
         function makeShiftCard(shift, isPreview) {
             const card = document.createElement("div");
             card.className = `shift ${isPreview ? "preview" : shift.source}`;
+            if (shift.color) {
+                card.style.setProperty("--shift-color", shift.color);
+            }
+
             card.innerHTML = `
         <strong>${isPreview ? "PREVIEW · " : ""}${escapeHTML(shift.label)}</strong>
         <small>${timeLabel(shift.start)} – ${timeLabel(shift.end)}</small>
         <small>
-    ${shift.source === "ukg" ? "UKG Pro" : "Shift App"}
-    ${shift.location ? " · " + escapeHTML(shift.location) : ""}
-</small>`;
+            ${shift.source === "ukg" ? "UKG Pro" : "Shift App"}
+            ${shift.location ? " · " + escapeHTML(shift.location) : ""}
+        </small>`;
+
             const buttons = document.createElement("div");
             buttons.className = "shift-buttons";
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "mini";
-            button.textContent = isPreview ? "Remove preview" : "Delete";
-            button.addEventListener("click", () => {
-                if (isPreview) previews = previews.filter(item => item.id !== shift.id);
-                else shifts = shifts.filter(item => item.id !== shift.id);
+
+            // Add Edit button for regular shifts
+            if (!isPreview) {
+                const editButton = document.createElement("button");
+                editButton.type = "button";
+                editButton.className = "mini";
+                editButton.textContent = "Edit";
+
+                editButton.addEventListener("click", () => {
+                    openEditModal(shift);
+                });
+
+                buttons.appendChild(editButton);
+            }
+
+            // Delete or remove preview button
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "mini";
+            deleteButton.textContent = isPreview ? "Remove preview" : "Delete";
+
+            deleteButton.addEventListener("click", () => {
+                if (isPreview) {
+                    previews = previews.filter(item => item.id !== shift.id);
+                } else {
+                    shifts = shifts.filter(item => item.id !== shift.id);
+                }
+
                 if (!isPreview) persist();
+
                 render();
             });
-            buttons.appendChild(button);
+
+            buttons.appendChild(deleteButton);
             card.appendChild(buttons);
+
             return card;
         }
 
-        const sampleOpenShifts = [{
-            id: "open-1",
-            label: "Evening coverage",
-            date: localISO(addDays(weekStart, 1)),
-            start: "17:00",
-            end: "21:00",
-            location: "Sample location",
-            source: "flex"
-        }, {
-            id: "open-2",
-            label: "Morning operations",
-            date: localISO(addDays(weekStart, 3)),
-            start: "08:00",
-            end: "13:00",
-            location: "Sample location",
-            source: "flex"
-        }, {
-            id: "open-3",
-            label: "Weekend coverage",
-            date: localISO(addDays(weekStart, 5)),
-            start: "12:00",
-            end: "18:00",
-            location: "Sample location",
-            source: "flex"
-        }];
+
+        function getSampleOpenShifts() {
+            return [{
+                id: "open-1",
+                label: "Evening coverage",
+                date: localISO(addDays(weekStart, 1)),
+                start: "17:00",
+                end: "21:00",
+                location: "Sample location",
+                source: "flex"
+            }, {
+                id: "open-2",
+                label: "Morning operations",
+                date: localISO(addDays(weekStart, 3)),
+                start: "08:00",
+                end: "13:00",
+                location: "Sample location",
+                source: "flex"
+            }, {
+                id: "open-3",
+                label: "Weekend coverage",
+                date: localISO(addDays(weekStart, 5)),
+                start: "12:00",
+                end: "18:00",
+                location: "Sample location",
+                source: "flex"
+            }];
+        }
+
 
         function renderOpenShifts() {
             const container = $("openShifts");
+
+            if (!container) {
+                console.error("Could not find the openShifts element.");
+                return;
+            }
+
             container.innerHTML = "";
+
+            const sampleOpenShifts = getSampleOpenShifts();
+
+            console.log("Sample open shifts:", sampleOpenShifts);
+
             sampleOpenShifts.forEach(shift => {
                 const row = document.createElement("div");
                 row.className = "open-card";
-                row.innerHTML = `<div><strong>${escapeHTML(shift.label)}</strong><small>${formatDate(shift.date)} · ${timeLabel(shift.start)}–${timeLabel(shift.end)}</small></div>`;
+
+                row.innerHTML = `
+            <div>
+                <strong>${escapeHTML(shift.label)}</strong>
+                <small>
+                    ${formatDate(shift.date)} ·
+                    ${timeLabel(shift.start)}–${timeLabel(shift.end)}
+                </small>
+            </div>
+        `;
+
                 const button = document.createElement("button");
                 button.className = "btn";
                 button.type = "button";
                 button.textContent = "Preview";
+
                 button.addEventListener("click", () => previewOpenShift(shift));
+
                 row.appendChild(button);
                 container.appendChild(row);
             });
@@ -1136,50 +1212,120 @@
             $("label").focus();
         }
 
+
+        function openEditModal(shift) {
+            // Remember which shift is being edited
+            editingShiftId = shift.id;
+
+            // Fill the form with the existing shift information
+            $("source").value = shift.source;
+            $("label").value = shift.label;
+            $("date").value = shift.date;
+            $("start").value = shift.start;
+            $("end").value = shift.end;
+            $("location").value = shift.location || "";
+            $("shiftColor").value = shift.color || "#6b91c9";
+
+            // Change the modal heading and button text
+            $("modalTitle").textContent = "Edit shift";
+            $("shiftForm").querySelector('button[type="submit"]').textContent = "Save changes";
+
+            openModal();
+        }
+
+
         function closeModal() {
             $("shiftModal").classList.remove("show");
         }
 
         function resetForm() {
+            editingShiftId = null;
+
             $("shiftForm").reset();
             $("date").value = localISO(today);
+
+            $("modalTitle").textContent = "Add a shift";
+            $("shiftForm").querySelector('button[type="submit"]').textContent = "Save shift";
         }
 
         $("addBtn").addEventListener("click", () => {
             resetForm();
             openModal();
         });
+
         $("shiftForm").addEventListener("submit", event => {
             event.preventDefault();
+
             const shift = {
-                id: `shift-${Date.now()}`,
                 source: $("source").value,
                 label: $("label").value.trim(),
                 date: $("date").value,
                 start: $("start").value,
                 end: $("end").value,
-                location: $("location").value.trim()
+                location: $("location").value.trim(),
+                color: $("shiftColor").value
             };
+
+            // Validate required fields
             if (!shift.label || !shift.date || !shift.start || !shift.end) {
                 alert("Please complete the shift name, date, start time, and end time.");
                 return;
             }
+
             if (shift.start === shift.end) {
-                alert("Start and end times cannot be identical. For an overnight shift, enter the next day's end time.");
+                alert("Start and end times cannot be identical.");
                 return;
             }
-            shifts.push(shift);
+
+            let message;
+
+            if (editingShiftId) {
+                // Find and update the existing shift
+                const index = shifts.findIndex(
+                    item => item.id === editingShiftId
+                );
+
+                if (index === -1) {
+                    alert("Could not find the shift to edit.");
+                    return;
+                }
+
+                shifts[index] = {
+                    ...shifts[index],
+                    ...shift
+                };
+
+                message = "Shift updated";
+            } else {
+                // Create a new shift
+                shifts.push({
+                    id: `shift-${Date.now()}`,
+                    ...shift
+                });
+
+                message = "Shift added";
+            }
+
             const saved = persist();
+
+            // Reset editing mode
+            editingShiftId = null;
+
             closeModal();
-            // If the shift is outside the currently displayed week, switch to its week.
-            weekStart = mondayOf(parseISO(shift.date));
+
+            // Display the week containing the saved shift
+            weekStart = sundayOf(parseISO(shift.date));
+
             previews = [];
             render();
+
             if (!saved) {
                 $("notice").className = "notice show amber";
-                $("notice").textContent = "Shift added for this session, but the browser could not save it between visits.";
+                $("notice").textContent =
+                    `${message}, but the browser could not save it between visits.`;
             }
         });
+
         document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", closeModal));
         $("shiftModal").addEventListener("click", event => {
             if (event.target === $("shiftModal")) closeModal();
@@ -1195,7 +1341,7 @@
             render();
         });
         $("thisWeek").addEventListener("click", () => {
-            weekStart = mondayOf(today);
+            weekStart = sundayOf(today);
             previews = [];
             render();
         });
